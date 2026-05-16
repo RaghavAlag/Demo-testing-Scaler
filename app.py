@@ -1,10 +1,9 @@
-import flask
+from flask import Flask, request, jsonify
 import sqlite3
 import os
-import subprocess
 import database
 
-app = flask.Flask(__name__)
+app = Flask(__name__)
 
 # Initialize Enterprise DB
 database.init_db()
@@ -51,43 +50,43 @@ def home():
 
 @app.route('/api/v1/search', methods=['POST'])
 def search_employees():
-    data = flask.request.json if flask.request.is_json else flask.request.form
+    data = request.json if request.is_json else request.form
     name = data.get('search_term', '')
     
-    query = "SELECT * FROM employees WHERE full_name = ?"
+    # VULNERABILITY: SQL Injection via string formatting
+    query = "SELECT * FROM employees WHERE full_name = '" + name + "'"
+    
     conn = get_db()
     try:
         cursor = conn.cursor()
-        cursor.execute(query, (name,))
+        cursor.execute(query)
         results = cursor.fetchall()
         conn.close()
         
         if results:
-            return flask.jsonify({"status": "success", "data": [dict(r) for r in results]})
-        return flask.jsonify({"status": "fail", "message": "No employee found."})
+            return jsonify({"status": "success", "data": [dict(r) for r in results]})
+        return jsonify({"status": "fail", "message": "No employee found."})
     except Exception as e:
-        return flask.jsonify({"status": "error", "error": str(e)})
+        return jsonify({"status": "error", "error": str(e)})
 
 @app.route('/api/v1/diagnostics', methods=['POST'])
 def diagnostics():
-    data = flask.request.json if flask.request.is_json else flask.request.form
+    data = request.json if request.is_json else request.form
     target = data.get('endpoint', '')
     
-    if not target:
-        return flask.jsonify({"status": "error", "details": "Endpoint is required."})
+    # VULNERABILITY: OS Command Injection
+    cmd = "ping -n 1 " + target
     
-    cmd = ["ping", "-n", "1", target]
     try:
-        output = subprocess.check_output(cmd).decode('utf-8')
-        return flask.jsonify({"status": "complete", "raw_output": output})
-    except subprocess.CalledProcessError as e:
-        return flask.jsonify({"status": "error", "details": str(e)})
+        process = os.popen(cmd)
+        output = process.read()
+        return jsonify({"status": "complete", "raw_output": output})
     except Exception as e:
-        return flask.jsonify({"status": "error", "details": str(e)})
+        return jsonify({"status": "error", "details": str(e)})
 
 @app.route('/health', methods=['GET'])
 def health():
-    return flask.jsonify({"status": "online", "port": 5001})
+    return jsonify({"status": "online", "port": 5001})
 
 if __name__ == '__main__':
     print("Enterprise Target running on http://localhost:5001")
